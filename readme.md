@@ -1,54 +1,108 @@
-# Шаблон для выполнения тестового задания
+# Тестовое задание
 
-## Описание
-Шаблон подготовлен для того, чтобы попробовать сократить трудоемкость выполнения тестового задания.
+Cоздать сервис, выполняющий 2 задачи:
+- регулярное получение информации о тарифах wb и сохранение их в БД на каждый день;
+- регулярное обновление информации об актуальных тарифах в google-таблицах.
 
-В шаблоне настоены контейнеры для `postgres` и приложения на `nodejs`.  
-Для взаимодействия с БД используется `knex.js`.  
-В контейнере `app` используется `build` для приложения на `ts`, но можно использовать и `js`.
+## Структура проекта
 
-Шаблон не является обязательным!\
-Можно использовать как есть или изменять на свой вкус.
+```
+.
+├── app.ts
+├── Dockerfile
+├── docker-compose.yaml
+├── google_credentials.json*  
+├── .env.example
+├── README.md
+└── src
+    ├── config
+    │   ├── env
+    │   │   └── env.ts
+    │   └── knex
+    │       ├── knexfile.ts
+    │       ├── migration.stub.js
+    │       └── seed.stub.js
+    ├── cron
+    │   ├── constants.ts
+    │   └── scheduler.ts
+    ├── jobs
+    │   ├── fetch-tariffs.job.ts
+    │   ├── job.interface.ts
+    │   └── sync-sheets.job.ts
+    ├── postgres
+    │   ├── knex.ts
+    │   ├── migrations
+    │   │   └── 20250623120507_create_spreadsheets_and_tariffs.js
+    │   └── seeds
+    │       └── spreadsheets.js
+    ├── repositories
+    │   ├── spreadsheet.repository.ts
+    │   └── tariff.repository.ts
+    ├── services
+    │   ├── api.service.ts
+    │   ├── google-auth.service.ts
+    │   └── sheets-sync.service.ts
+    ├── types
+    │   ├── raw-warehouse-tariff.type.ts
+    │   └── tariff.type.ts
+    └── utils
+        ├── error.ts
+        ├── knex.ts
+        └── parse-numeric.ts
+```
+\* `google_credentials.json` — ваш файл с ключами доступа к Google Sheets API.
 
-Все настройки можно найти в файлах:
-- compose.yaml
-- dockerfile
-- package.json
-- tsconfig.json
-- src/config/env/env.ts
-- src/config/knex/knexfile.ts
+## Требования
 
-## Команды:
+- Docker & Docker Compose
+- Файл `google_credentials.json` в корне проекта (сервисный аккаунт Google, имеющий доступ к Sheets API).
+- Файл `.env` с настройками (см. ниже).
 
-Запуск базы данных:
-```bash
-docker compose up -d --build postgres
+## 1. Настройка
+
+1. Скопируйте (или просто переименуйте в `.env`) `example.env` и заполните реальные значения:
+```
+cp example.env .env
 ```
 
-Для выполнения миграций и сидов не из контейнера:
-```bash
-npm run knex:dev migrate latest
+2. Откройте `.env` и укажите:
+```
+NODE_ENV=development
+API_KEY=ваш_ключ
+
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5433
+POSTGRES_DB=postgres
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=postgres
+
+APP_PORT=5000
+GOOGLE_APPLICATION_CREDENTIALS=./google_credentials.json (или своё название)
 ```
 
-```bash
-npm run knex:dev seed run
-```
-Также можно использовать и остальные команды (`migrate make <name>`,`migrate up`, `migrate down` и т.д.)
+3. Обновите сиды Google Sheets
 
-Для запуска приложения в режиме разработки:
-```bash
-npm run dev
+В файле `src/postgres/seeds/spreadsheets.js` указаны примеры `spreadsheet_id`.
+Перед запуском замените их на свои ID тестовых Google-таблиц:
+```js
+await knex("spreadsheets")
+  .insert([
+    { spreadsheet_id: "ВАШ_SPREADSHEET_ID_1" },
+    { spreadsheet_id: "ВАШ_SPREADSHEET_ID_2" },
+  ])
+  .onConflict(["spreadsheet_id"])
+  .ignore();
 ```
 
-Запуск проверки самого приложения:
-```bash
-docker compose up -d --build app
-```
+4. Поместите файл `google_credentials.json` с сервисным аккаунтом Google в корень проекта
 
-Для финальной проверки рекомендую:
-```bash
-docker compose down --rmi local --volumes
+## 2. Сборка и запуск
+
+В корне проекта выполните:
+```
 docker compose up --build
 ```
-
-PS: С наилучшими пожеланиями!
+В контейнере `app` автоматически:
+- `knex migrate:latest`
+- `knex seed:run`
+- Инициализация планировщика для FetchTariffsJob и SyncSheetsJob
